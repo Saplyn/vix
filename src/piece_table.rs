@@ -11,7 +11,7 @@ pub struct PieceTable {
     pieces: Vec<PieceRecord>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct PieceRecord {
     ty: PieceType,
     begin: usize,
