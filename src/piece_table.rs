@@ -1,3 +1,7 @@
+//! WARNING: this data structure is ASCII-only, meaning that every char that is
+//! not 1 byte length will cause the program to behave incorrectly. This is
+//! planed to be fixed in the near future, though.
+
 use std::fmt::{self, Display};
 
 #[derive(Debug)]
