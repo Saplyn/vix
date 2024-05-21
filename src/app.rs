@@ -1,13 +1,6 @@
-// FIXME: remove this debug allow
-#![allow(unused)]
+use std::{fs::File, io::Stdout, time::Duration};
 
-use std::{
-    fs::File,
-    io::{stdout, Stdout},
-    time::Duration,
-};
-
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode};
 use log::{debug, LevelFilter};
 use ratatui::{
     backend::CrosstermBackend, buffer::Buffer, layout::Rect, style::Style, widgets::Widget,
@@ -20,18 +13,22 @@ use crate::tui;
 #[derive(Debug)]
 pub struct App {
     mode: AppMode,
+    cursor: (u16, u16),
 }
 
 #[derive(Debug, Default)]
 enum AppMode {
     #[default]
     Normal,
+    Insert,
+    Command,
 }
 
 #[derive(Debug)]
 enum AppAction {
     None,
     Quit,
+    CursorMove(u16, u16),
 }
 
 impl Widget for &App {
@@ -50,26 +47,30 @@ impl App {
     pub fn new() -> Self {
         Self {
             mode: AppMode::Normal,
+            cursor: (0, 0),
         }
     }
 
-    pub fn run(&self) -> anyhow::Result<()> {
-        tui::init()?;
+    pub fn run(&mut self) -> anyhow::Result<()> {
+        let mut term = tui::init()?;
         init_log()?;
 
-        let mut term = Terminal::new(CrosstermBackend::new(stdout()))?;
-
         loop {
-            self.draw(&mut term);
-            term.set_cursor(0, 0);
-            term.show_cursor();
+            self.draw(&mut term)?;
+            term.show_cursor()?;
+            term.set_cursor(self.cursor.0, self.cursor.1)?;
 
             if event::poll(Duration::from_millis(10))? {
                 let event = event::read()?;
                 match self.handle_event(event)? {
-                    AppAction::Quit => break,
                     AppAction::None => {}
+                    AppAction::Quit => break,
+                    AppAction::CursorMove(row, col) => {
+                        self.cursor.0 = row;
+                        self.cursor.1 = col;
+                    }
                 };
+                debug!("{:?}", self);
             }
         }
 
@@ -87,16 +88,29 @@ impl App {
     }
 
     fn handle_event(&self, event: Event) -> anyhow::Result<AppAction> {
+        debug!("{:?}", event);
         match event {
-            Event::Key(key) => {
-                debug!("{:?}", key);
-                if key.code == KeyCode::Char('q') {
-                    Ok(AppAction::Quit)
-                } else {
-                    Ok(AppAction::None)
-                }
-            }
-            _ => todo!(),
+            Event::Key(key) => match key.code {
+                KeyCode::Char('q') => Ok(AppAction::Quit),
+                KeyCode::Char('h') => Ok(AppAction::CursorMove(
+                    self.cursor.0.saturating_sub(1),
+                    self.cursor.1,
+                )),
+                KeyCode::Char('j') => Ok(AppAction::CursorMove(
+                    self.cursor.0,
+                    self.cursor.1.saturating_add(1),
+                )),
+                KeyCode::Char('k') => Ok(AppAction::CursorMove(
+                    self.cursor.0,
+                    self.cursor.1.saturating_sub(1),
+                )),
+                KeyCode::Char('l') => Ok(AppAction::CursorMove(
+                    self.cursor.0.saturating_add(1),
+                    self.cursor.1,
+                )),
+                _ => Ok(AppAction::None),
+            },
+            _ => Ok(AppAction::None),
         }
     }
 }

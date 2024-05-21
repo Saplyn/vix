@@ -5,7 +5,7 @@ mod piece_table;
 mod tui;
 
 fn main() -> anyhow::Result<()> {
-    let app = App::new();
+    let mut app = App::new();
     app.run()?;
     Ok(())
 }
