@@ -1,10 +1,12 @@
+use std::error::Error;
+
 use app::App;
 
 mod app;
 mod piece_table;
 mod tui;
 
-fn main() -> anyhow::Result<()> {
+fn main() -> Result<(), Box<dyn Error>> {
     let mut app = App::new();
     app.run()?;
     Ok(())
