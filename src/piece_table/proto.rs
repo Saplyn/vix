@@ -104,7 +104,7 @@ impl PieceTable {
             PieceRecord {
                 ty: PieceType::Add,
                 begin,
-                length: 1,
+                length: ch.len_utf8(),
             },
         );
     }
