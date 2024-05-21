@@ -54,6 +54,7 @@ pub enum Move {
     Up,
     Down,
 }
+
 impl Potision {
     pub fn constraint_move(self, width: u16, height: u16, mv: Move) -> Potision {
         match mv {
