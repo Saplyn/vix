@@ -1,3 +1,0 @@
-07:51:56 [TRACE] (1) mio::poll: [/home/saplyn/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mio-0.8.11/src/poll.rs:551] registering event source with poller: token=Token(0), interests=READABLE
-07:51:56 [TRACE] (1) mio::poll: [/home/saplyn/.cargo/registry/src/index.crates.io-6f17d22bba15001f/mio-0.8.11/src/poll.rs:551] registering event source with poller: token=Token(1), interests=READABLE
-07:51:58 [DEBUG] (1) vix::app: KeyEvent { code: Char('q'), modifiers: KeyModifiers(0x0), kind: Press, state: KeyEventState(0x0) }
