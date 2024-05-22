@@ -4,7 +4,7 @@ use std::{
 };
 
 use crossterm::{
-    cursor, event, execute,
+    cursor, execute,
     terminal::{self, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};

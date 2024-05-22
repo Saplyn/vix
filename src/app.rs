@@ -194,7 +194,7 @@ impl App {
         term: &Terminal<CrosstermBackend<Stdout>>,
     ) -> Result<AppAction, AppError> {
         let width = term.size()?.width - 1;
-        let height = term.size()?.height - 1;
+        let height = term.size()?.height - 2;
         match event {
             Event::Key(key) => match key.code {
                 KeyCode::Char('h') | KeyCode::Left => Ok(AppAction::CursorMove(

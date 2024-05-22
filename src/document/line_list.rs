@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
