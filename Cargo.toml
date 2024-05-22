@@ -7,10 +7,16 @@ edition = "2021"
 
 [dependencies]
 # Quality of life
+derive_tools = { version = "0.22", default-features = false, features = [
+    "enabled",
+    "derive_display",
+] }
+# Error handling
 thiserror = "1.0"
 # Terminal manipulation
 crossterm = "0.27"
 ratatui = "0.26"
+ratatui-macros = "0.4"
 # Logging
 log = "0.4"
 simplelog = "0.12"
