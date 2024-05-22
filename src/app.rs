@@ -1,8 +1,15 @@
 use std::{fs::File, io::Stdout, time::Duration, u16};
 
 use crossterm::event::{self, Event, KeyCode};
+use derive_tools::Display;
 use log::{debug, LevelFilter};
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::{
+    backend::CrosstermBackend,
+    style::{Style, Stylize},
+    text::Line,
+    Terminal,
+};
+use ratatui_macros::vertical;
 use simplelog::{CombinedLogger, WriteLogger};
 use thiserror::Error;
 
@@ -25,7 +32,7 @@ pub enum AppError {
     SetLoggerErr(#[from] log::SetLoggerError),
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq, Display)]
 enum AppMode {
     #[default]
     Normal,
@@ -36,7 +43,6 @@ enum AppMode {
 #[derive(Debug, PartialEq, Eq)]
 enum AppAction {
     None,
-    Quit,
     CursorMove(Potision),
     EnterMode(AppMode),
     CmdPush(char),
@@ -125,7 +131,6 @@ impl App {
     fn process(&mut self, action: AppAction) {
         match action {
             AppAction::None => {}
-            AppAction::Quit => self.running = false,
             AppAction::CursorMove(pos) => {
                 self.cursor.row = pos.row;
                 self.cursor.col = pos.col;
@@ -151,7 +156,20 @@ impl App {
     fn draw(&self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), AppError> {
         term.draw(|frame| {
             let area = frame.size();
-            frame.render_widget(&self.doc, area);
+            let [main_area, status_area] = vertical![*=1, ==1].areas(area);
+            frame.render_widget(&self.doc, main_area);
+
+            let status_line = match self.mode {
+                AppMode::Normal => "NORMAL".to_string(),
+                AppMode::Command => format!("COMMAND: {}", self.cmd),
+                AppMode::Insert => "INSERT".to_string(),
+            };
+            let status_style = match self.mode {
+                AppMode::Normal => Style::default().bold().on_light_blue(),
+                AppMode::Command => Style::default().bold().black().on_light_yellow(),
+                AppMode::Insert => Style::default().bold().black().on_green(),
+            };
+            frame.render_widget(Line::styled(status_line, status_style), status_area);
         })?;
 
         Ok(())
