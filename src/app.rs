@@ -5,11 +5,13 @@ use derive_tools::Display;
 use log::{debug, LevelFilter};
 use ratatui::{
     backend::CrosstermBackend,
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Style, Stylize},
     text::Line,
+    widgets::{Block, Clear, Paragraph, Widget},
     Terminal,
 };
-use ratatui_macros::vertical;
+use ratatui_macros::{line, vertical};
 use simplelog::{CombinedLogger, WriteLogger};
 use thiserror::Error;
 
@@ -19,6 +21,7 @@ use crate::{document::Document, tui};
 pub struct App {
     mode: AppMode,
     cursor: Potision,
+    show_help: bool,
     running: bool,
     doc: Document,
     cmd: String,
@@ -100,6 +103,7 @@ impl App {
         Self {
             mode: AppMode::Normal,
             cursor: Potision::default(),
+            show_help: true,
             running: true,
             doc: Document::hello_world(),
             cmd: String::new(),
@@ -116,7 +120,10 @@ impl App {
             term.set_cursor(self.cursor.col, self.cursor.row)?;
 
             if event::poll(Duration::from_millis(10))? {
+                self.show_help = false;
+
                 let event = event::read()?;
+                debug!("{:?}", event);
                 let action = self.handle_event(event, &term)?;
                 debug!("{:?}", action);
                 self.process(action);
@@ -156,6 +163,12 @@ impl App {
     fn draw(&self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), AppError> {
         term.draw(|frame| {
             let area = frame.size();
+            if self.show_help {
+                let popup_layout = centered_rect(frame.size(), 35, 53);
+                frame.render_widget(Clear, popup_layout);
+                frame.render_widget(self.help_widgt(), popup_layout);
+            }
+
             let [main_area, status_area] = vertical![*=1, ==1].areas(area);
             frame.render_widget(&self.doc, main_area);
 
@@ -180,7 +193,6 @@ impl App {
         event: Event,
         term: &Terminal<CrosstermBackend<Stdout>>,
     ) -> Result<AppAction, AppError> {
-        debug!("{:?}", event);
         match self.mode {
             AppMode::Normal => self.handle_event_normal(event, term),
             AppMode::Insert => self.handle_event_insert(event),
@@ -243,8 +255,21 @@ impl App {
     fn process_cmd(&mut self) {
         match self.cmd.as_str() {
             "q" | "quit" | "exit" => self.running = false,
+            "h" | "help" => self.show_help = true,
             _ => {}
         }
+    }
+
+    fn help_widgt(&self) -> impl Widget {
+        let text = vec![
+            line!["ViX - A Vi-like Text Editor"].centered(),
+            line![],
+            line![],
+            line!["`:q` - to quit vix                 "].centered(),
+            line!["`:h` - to display this help message"].centered(),
+        ];
+
+        Paragraph::new(text).alignment(Alignment::Center)
     }
 }
 
@@ -256,4 +281,25 @@ fn init_log() -> Result<(), AppError> {
     )])?;
 
     Ok(())
+}
+
+// https://ratatui.rs/recipes/layout/center-a-rect/
+fn centered_rect(r: Rect, percent_x: u16, percent_y: u16) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
 }
