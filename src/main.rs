@@ -3,6 +3,7 @@ use std::error::Error;
 use app::App;
 
 mod app;
+mod document;
 mod piece_table;
 mod tui;
 

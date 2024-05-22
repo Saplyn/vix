@@ -1,20 +1,20 @@
-use std::{fs::File, io::Stdout, time::Duration};
+use std::{fs::File, io::Stdout, time::Duration, u16};
 
 use crossterm::event::{self, Event, KeyCode};
 use log::{debug, LevelFilter};
-use ratatui::{
-    backend::CrosstermBackend, buffer::Buffer, layout::Rect, style::Style, widgets::Widget,
-    Terminal,
-};
+use ratatui::{backend::CrosstermBackend, Terminal};
 use simplelog::{CombinedLogger, WriteLogger};
 use thiserror::Error;
 
-use crate::tui;
+use crate::{document::Document, tui};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct App {
     mode: AppMode,
     cursor: Potision,
+    running: bool,
+    doc: Document,
+    cmd: String,
 }
 
 #[derive(Debug, Error)]
@@ -39,6 +39,9 @@ enum AppAction {
     Quit,
     CursorMove(Potision),
     EnterMode(AppMode),
+    CmdPush(char),
+    CmdPop,
+    CmdEnter,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -86,23 +89,14 @@ impl Potision {
     }
 }
 
-impl Widget for &App {
-    fn render(self, area: Rect, buf: &mut Buffer)
-    where
-        Self: Sized,
-    {
-        let test = "~";
-        for row in 0..area.height {
-            buf.set_string(0, row, test, Style::default());
-        }
-    }
-}
-
 impl App {
     pub fn new() -> Self {
         Self {
             mode: AppMode::Normal,
             cursor: Potision::default(),
+            running: true,
+            doc: Document::hello_world(),
+            cmd: String::new(),
         }
     }
 
@@ -110,24 +104,16 @@ impl App {
         let mut term = tui::init()?;
         init_log()?;
 
-        loop {
+        while self.running {
             self.draw(&mut term)?;
             term.show_cursor()?;
             term.set_cursor(self.cursor.col, self.cursor.row)?;
 
             if event::poll(Duration::from_millis(10))? {
                 let event = event::read()?;
-                match self.handle_event(event, &term)? {
-                    AppAction::None => {}
-                    AppAction::Quit => break,
-                    AppAction::CursorMove(pos) => {
-                        self.cursor.row = pos.row;
-                        self.cursor.col = pos.col;
-                    }
-                    AppAction::EnterMode(mode) => {
-                        self.mode = mode;
-                    }
-                };
+                let action = self.handle_event(event, &term)?;
+                debug!("{:?}", action);
+                self.process(action);
                 debug!("{:?}", self);
             }
         }
@@ -136,10 +122,36 @@ impl App {
         Ok(())
     }
 
+    fn process(&mut self, action: AppAction) {
+        match action {
+            AppAction::None => {}
+            AppAction::Quit => self.running = false,
+            AppAction::CursorMove(pos) => {
+                self.cursor.row = pos.row;
+                self.cursor.col = pos.col;
+            }
+            AppAction::EnterMode(mode) => {
+                match mode {
+                    AppMode::Command => self.cmd.clear(),
+                    _ => {}
+                }
+                self.mode = mode;
+            }
+            AppAction::CmdPop => {
+                self.cmd.pop();
+            }
+            AppAction::CmdPush(ch) => self.cmd.push(ch),
+            AppAction::CmdEnter => {
+                self.process_cmd();
+                self.mode = AppMode::Normal;
+            }
+        };
+    }
+
     fn draw(&self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), AppError> {
         term.draw(|frame| {
             let area = frame.size();
-            frame.render_widget(self, area);
+            frame.render_widget(&self.doc, area);
         })?;
 
         Ok(())
@@ -167,7 +179,6 @@ impl App {
         let height = term.size()?.height - 1;
         match event {
             Event::Key(key) => match key.code {
-                KeyCode::Char('q') => Ok(AppAction::Quit),
                 KeyCode::Char('h') | KeyCode::Left => Ok(AppAction::CursorMove(
                     self.cursor.constraint_move(width, height, Move::Left),
                 )),
@@ -202,9 +213,19 @@ impl App {
         match event {
             Event::Key(key) => match key.code {
                 KeyCode::Esc => Ok(AppAction::EnterMode(AppMode::Normal)),
+                KeyCode::Char(ch) => Ok(AppAction::CmdPush(ch)),
+                KeyCode::Backspace => Ok(AppAction::CmdPop),
+                KeyCode::Enter => Ok(AppAction::CmdEnter),
                 _ => Ok(AppAction::None),
             },
             _ => Ok(AppAction::None),
+        }
+    }
+
+    fn process_cmd(&mut self) {
+        match self.cmd.as_str() {
+            "q" | "quit" | "exit" => self.running = false,
+            _ => {}
         }
     }
 }
