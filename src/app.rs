@@ -286,6 +286,7 @@ impl App {
         let height = term.size()?.height - 2;
         let cursor = self.cursor;
         let view_shift = self.view_shift;
+        let doc_height = self.doc.line_count().saturating_sub(1);
 
         match event {
             Event::Key(key) => match key.code {
@@ -299,13 +300,39 @@ impl App {
 
                 KeyCode::Char('j') | KeyCode::Down => {
                     Ok(if key.modifiers == KeyModifiers::CONTROL {
-                        AppAction::ViewShift(view_shift.free_move(Move::Down))
+                        if view_shift.row as usize == doc_height {
+                            AppAction::None
+                        } else {
+                            AppAction::CursorViewChange {
+                                cursor: cursor.constraint_move(width, height, Move::Up),
+                                view_shift: view_shift.free_move(Move::Down),
+                            }
+                        }
+                    } else if cursor.row == height {
+                        if cursor.row as usize + view_shift.row as usize == doc_height {
+                            AppAction::None
+                        } else {
+                            AppAction::ViewShift(view_shift.free_move(Move::Down))
+                        }
                     } else {
-                        AppAction::CursorMove(cursor.constraint_move(width, height, Move::Down))
+                        if cursor.row as usize + view_shift.row as usize == doc_height {
+                            AppAction::None
+                        } else {
+                            AppAction::CursorMove(cursor.constraint_move(width, height, Move::Down))
+                        }
                     })
                 }
 
                 KeyCode::Char('k') | KeyCode::Up => Ok(if key.modifiers == KeyModifiers::CONTROL {
+                    if view_shift.row != 0 {
+                        AppAction::CursorViewChange {
+                            cursor: cursor.constraint_move(width, height, Move::Down),
+                            view_shift: view_shift.free_move(Move::Up),
+                        }
+                    } else {
+                        AppAction::None
+                    }
+                } else if cursor.row == 0 {
                     AppAction::ViewShift(view_shift.free_move(Move::Up))
                 } else {
                     AppAction::CursorMove(cursor.constraint_move(width, height, Move::Up))
