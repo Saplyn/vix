@@ -219,6 +219,8 @@ impl App {
         // TODO: impl or remove
     }
 
+    // LYN: Rendering Logic
+
     fn draw(&self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), AppError> {
         term.draw(|frame| {
             let area = frame.size();
