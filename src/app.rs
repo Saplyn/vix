@@ -105,6 +105,8 @@ impl Potision {
 }
 
 impl App {
+    // LYN: Core Functionality
+
     pub fn open_file(file_path: impl AsRef<Path>) -> io::Result<Self> {
         Ok(Self {
             mode: AppMode::default(),
@@ -141,6 +143,8 @@ impl App {
         Ok(())
     }
 
+    // LYN: Processing Logic
+
     fn process(&mut self, action: AppAction) {
         match action {
             AppAction::None => {}
@@ -165,6 +169,8 @@ impl App {
             }
         };
     }
+
+    // LYN: Rendering Logic
 
     fn draw(&self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), AppError> {
         term.draw(|frame| {
@@ -193,6 +199,20 @@ impl App {
 
         Ok(())
     }
+
+    fn help_widgt(&self) -> impl Widget {
+        let text = vec![
+            line!["ViX - A Vi-like Text Editor"],
+            line![],
+            line![],
+            line!["`:q` - to quit vix                 "],
+            line!["`:h` - to display this help message"],
+        ];
+
+        Paragraph::new(text).alignment(Alignment::Center)
+    }
+
+    // LYN: Handling Event
 
     fn handle_event(
         &self,
@@ -264,18 +284,6 @@ impl App {
             "h" | "help" => self.show_help = true,
             _ => {}
         }
-    }
-
-    fn help_widgt(&self) -> impl Widget {
-        let text = vec![
-            line!["ViX - A Vi-like Text Editor"],
-            line![],
-            line![],
-            line!["`:q` - to quit vix                 "],
-            line!["`:h` - to display this help message"],
-        ];
-
-        Paragraph::new(text).alignment(Alignment::Center)
     }
 }
 
