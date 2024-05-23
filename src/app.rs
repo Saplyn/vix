@@ -1,4 +1,5 @@
 use std::{
+    cmp,
     fs::File,
     io::{self, Stdout},
     path::Path,
@@ -6,9 +7,12 @@ use std::{
     u16,
 };
 
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::{
+    cursor,
+    event::{self, Event, KeyCode},
+};
 use derive_tools::Display;
-use log::{debug, LevelFilter};
+use log::{debug, info, warn, LevelFilter};
 use ratatui::{
     backend::CrosstermBackend,
     buffer::Buffer,
@@ -74,6 +78,7 @@ pub struct Potision {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Move {
+    None,
     Left,
     Right,
     Up,
@@ -98,6 +103,10 @@ impl Potision {
             Move::Right => Potision {
                 row: self.row,
                 col: self.col.saturating_add(1),
+            },
+            Move::None => Potision {
+                row: self.row,
+                col: self.col,
             },
         }
     }
@@ -126,6 +135,10 @@ impl Potision {
                 } else {
                     self.col
                 },
+            },
+            Move::None => Potision {
+                row: self.row,
+                col: self.col,
             },
         }
     }
@@ -215,20 +228,11 @@ impl App {
         }
     }
 
-    fn frame_cursor(&mut self) {
-        // TODO: impl or remove
-    }
-
     // LYN: Rendering Logic
 
     fn draw(&self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), AppError> {
         term.draw(|frame| {
             let area = frame.size();
-            if self.show_help {
-                let popup_layout = centered_rect(frame.size(), 35, 53);
-                frame.render_widget(Clear, popup_layout);
-                frame.render_widget(self.help_widgt(), popup_layout);
-            }
 
             let [main_area, status_area] = vertical![*=1, ==1].areas(area);
             frame.render_widget(self, main_area);
@@ -244,6 +248,12 @@ impl App {
                 AppMode::Insert => Style::default().bold().black().on_green(),
             };
             frame.render_widget(Line::styled(status_line, status_style), status_area);
+
+            if self.show_help {
+                let popup_layout = centered_rect(frame.size(), 35, 53);
+                frame.render_widget(Clear, popup_layout);
+                frame.render_widget(self.help_widgt(), popup_layout);
+            }
         })?;
 
         Ok(())
@@ -270,10 +280,13 @@ impl App {
         event: Event,
         term: &Terminal<CrosstermBackend<Stdout>>,
     ) -> Result<AppAction, AppError> {
-        match self.mode {
-            AppMode::Normal => self.handle_event_normal(event, term),
-            AppMode::Insert => self.handle_event_insert(event),
-            AppMode::Command => self.handle_event_command(event),
+        match event {
+            Event::Resize(_, _) => self.handle_event_cursor(term, Move::None),
+            event => match self.mode {
+                AppMode::Normal => self.handle_event_normal(event, term),
+                AppMode::Insert => self.handle_event_insert(event),
+                AppMode::Command => self.handle_event_command(event),
+            },
         }
     }
 
@@ -282,72 +295,104 @@ impl App {
         event: Event,
         term: &Terminal<CrosstermBackend<Stdout>>,
     ) -> Result<AppAction, AppError> {
-        let width = term.size()?.width - 1;
-        let height = term.size()?.height - 2;
-        let cursor = self.cursor;
-        let view_shift = self.view_shift;
-        let doc_height = self.doc.line_count().saturating_sub(1);
-
         match event {
             Event::Key(key) => match key.code {
-                KeyCode::Char('h') | KeyCode::Left => {
-                    Ok(if key.modifiers == KeyModifiers::CONTROL {
-                        AppAction::ViewShift(view_shift.free_move(Move::Left))
-                    } else {
-                        AppAction::CursorMove(cursor.constraint_move(width, height, Move::Left))
-                    })
-                }
-
-                KeyCode::Char('j') | KeyCode::Down => {
-                    Ok(if key.modifiers == KeyModifiers::CONTROL {
-                        if view_shift.row as usize == doc_height {
-                            AppAction::None
-                        } else {
-                            AppAction::CursorViewChange {
-                                cursor: cursor.constraint_move(width, height, Move::Up),
-                                view_shift: view_shift.free_move(Move::Down),
-                            }
-                        }
-                    } else if cursor.row as usize + view_shift.row as usize == doc_height {
-                        AppAction::None
-                    } else {
-                        if cursor.row == height {
-                            AppAction::ViewShift(view_shift.free_move(Move::Down))
-                        } else {
-                            AppAction::CursorMove(cursor.constraint_move(width, height, Move::Down))
-                        }
-                    })
-                }
-
-                KeyCode::Char('k') | KeyCode::Up => Ok(if key.modifiers == KeyModifiers::CONTROL {
-                    if view_shift.row != 0 {
-                        AppAction::CursorViewChange {
-                            cursor: cursor.constraint_move(width, height, Move::Down),
-                            view_shift: view_shift.free_move(Move::Up),
-                        }
-                    } else {
-                        AppAction::None
-                    }
-                } else if cursor.row == 0 {
-                    AppAction::ViewShift(view_shift.free_move(Move::Up))
-                } else {
-                    AppAction::CursorMove(cursor.constraint_move(width, height, Move::Up))
-                }),
-
-                KeyCode::Char('l') | KeyCode::Right => {
-                    Ok(if key.modifiers == KeyModifiers::CONTROL {
-                        AppAction::ViewShift(view_shift.free_move(Move::Right))
-                    } else {
-                        AppAction::CursorMove(cursor.constraint_move(width, height, Move::Right))
-                    })
-                }
-
+                KeyCode::Char('h') | KeyCode::Left => self.handle_event_cursor(term, Move::Left),
+                KeyCode::Char('j') | KeyCode::Down => self.handle_event_cursor(term, Move::Down),
+                KeyCode::Char('k') | KeyCode::Up => self.handle_event_cursor(term, Move::Up),
+                KeyCode::Char('l') | KeyCode::Right => self.handle_event_cursor(term, Move::Right),
                 KeyCode::Char('i') => Ok(AppAction::EnterMode(AppMode::Insert)),
                 KeyCode::Char(':') => Ok(AppAction::EnterMode(AppMode::Command)),
                 _ => Ok(AppAction::None),
             },
             _ => Ok(AppAction::None),
         }
+    }
+
+    fn handle_event_cursor(
+        &self,
+        term: &Terminal<CrosstermBackend<Stdout>>,
+        mv: Move,
+    ) -> Result<AppAction, AppError> {
+        let width = term.size()?.width.saturating_sub(1);
+        let height = term.size()?.height.saturating_sub(2);
+        let doc_height = self.doc.line_count().saturating_sub(1);
+
+        let mut view_shift = self.view_shift;
+        let mut cursor = match mv {
+            Move::None => self.cursor,
+            Move::Left => {
+                if self.cursor.col == 0 {
+                    view_shift = view_shift.free_move(Move::Left);
+                    self.cursor
+                } else {
+                    self.cursor.free_move(Move::Left)
+                }
+            }
+            Move::Down => self.cursor.free_move(Move::Down),
+            Move::Up => {
+                if self.cursor.row == 0 {
+                    view_shift = view_shift.free_move(Move::Up);
+                    self.cursor
+                } else {
+                    self.cursor.free_move(Move::Up)
+                }
+            }
+            Move::Right => self.cursor.free_move(Move::Right),
+        };
+
+        warn!("cursor: {:?}", cursor);
+        warn!("view_shift: {:?}", view_shift);
+
+        let ln_len = self
+            .doc
+            .get_line_len(view_shift.row as usize + cursor.row as usize);
+        let last_col = cmp::min(
+            ln_len.saturating_sub(view_shift.col as usize),
+            width as usize,
+        );
+        let last_row = cmp::min(
+            doc_height.saturating_sub(view_shift.row as usize),
+            height as usize,
+        );
+
+        warn!("doc_height: {:?}", doc_height);
+        warn!("height: {:?}", height);
+        warn!("width: {:?}", width);
+        warn!("last_col: {:?}", last_col);
+        warn!("last_row: {:?}", last_row);
+
+        while cursor.col > width && (cursor.col as usize) > last_col {
+            view_shift.col = view_shift.col.saturating_add(1);
+            cursor.col = cursor.col.saturating_sub(1);
+        }
+        while cursor.row > height && (cursor.row as usize) > last_row {
+            view_shift.row = view_shift.row.saturating_add(1);
+            cursor.row = cursor.row.saturating_sub(1);
+        }
+
+        // horizontal
+        while (cursor.col as usize).saturating_add(view_shift.col as usize) > ln_len {
+            if cursor.col != 0 {
+                cursor.col = cursor.col.saturating_sub(1);
+            } else {
+                view_shift.col = view_shift.col.saturating_sub(1);
+            }
+        }
+
+        // vertical
+        while (cursor.row as usize).saturating_add(view_shift.row as usize) > doc_height {
+            if cursor.row != 0 {
+                cursor.row = cursor.row.saturating_sub(1);
+            } else {
+                view_shift.row = view_shift.row.saturating_sub(1);
+            }
+        }
+
+        warn!("cursor: {:?}", cursor);
+        warn!("view_shift: {:?}", view_shift);
+
+        Ok(AppAction::CursorViewChange { cursor, view_shift })
     }
 
     fn handle_event_insert(&self, event: Event) -> Result<AppAction, AppError> {

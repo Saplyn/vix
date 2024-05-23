@@ -1,4 +1,4 @@
-use std::{fs, io, path::Path, slice::SliceIndex};
+use std::{fs, io, path::Path};
 
 #[derive(Debug, Default)]
 pub struct Document {
