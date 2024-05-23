@@ -308,15 +308,11 @@ impl App {
                                 view_shift: view_shift.free_move(Move::Down),
                             }
                         }
-                    } else if cursor.row == height {
-                        if cursor.row as usize + view_shift.row as usize == doc_height {
-                            AppAction::None
-                        } else {
-                            AppAction::ViewShift(view_shift.free_move(Move::Down))
-                        }
+                    } else if cursor.row as usize + view_shift.row as usize == doc_height {
+                        AppAction::None
                     } else {
-                        if cursor.row as usize + view_shift.row as usize == doc_height {
-                            AppAction::None
+                        if cursor.row == height {
+                            AppAction::ViewShift(view_shift.free_move(Move::Down))
                         } else {
                             AppAction::CursorMove(cursor.constraint_move(width, height, Move::Down))
                         }
