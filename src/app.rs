@@ -6,15 +6,16 @@ use std::{
     u16,
 };
 
-use crossterm::event::{self, Event, KeyCode};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use derive_tools::Display;
 use log::{debug, LevelFilter};
 use ratatui::{
     backend::CrosstermBackend,
+    buffer::Buffer,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Style, Stylize},
     text::Line,
-    widgets::{Clear, Paragraph, Widget},
+    widgets::{Block, Borders, Clear, Paragraph, Widget},
     Terminal,
 };
 use ratatui_macros::{line, vertical};
@@ -27,6 +28,7 @@ use crate::{document::Document, tui};
 pub struct App {
     mode: AppMode,
     cursor: Potision,
+    view_shift: Potision,
     show_help: bool,
     running: bool,
     doc: Document,
@@ -53,6 +55,11 @@ enum AppMode {
 enum AppAction {
     None,
     CursorMove(Potision),
+    ViewShift(Potision),
+    CursorViewChange {
+        cursor: Potision,
+        view_shift: Potision,
+    },
     EnterMode(AppMode),
     CmdPush(char),
     CmdPop,
@@ -74,6 +81,26 @@ pub enum Move {
 }
 
 impl Potision {
+    pub fn free_move(self, mv: Move) -> Potision {
+        match mv {
+            Move::Left => Potision {
+                row: self.row,
+                col: self.col.saturating_sub(1),
+            },
+            Move::Up => Potision {
+                row: self.row.saturating_sub(1),
+                col: self.col,
+            },
+            Move::Down => Potision {
+                row: self.row.saturating_add(1),
+                col: self.col,
+            },
+            Move::Right => Potision {
+                row: self.row,
+                col: self.col.saturating_add(1),
+            },
+        }
+    }
     pub fn constraint_move(self, width: u16, height: u16, mv: Move) -> Potision {
         match mv {
             Move::Left => Potision {
@@ -111,6 +138,7 @@ impl App {
         Ok(Self {
             mode: AppMode::default(),
             cursor: Potision::default(),
+            view_shift: Potision::default(),
             show_help: true,
             running: true,
             doc: Document::open(file_path)?,
@@ -135,7 +163,6 @@ impl App {
                 let action = self.handle_event(event, &term)?;
                 debug!("{:?}", action);
                 self.process(action);
-                debug!("{:?}", self);
             }
         }
 
@@ -151,6 +178,16 @@ impl App {
             AppAction::CursorMove(pos) => {
                 self.cursor.row = pos.row;
                 self.cursor.col = pos.col;
+            }
+            AppAction::ViewShift(shift) => {
+                self.view_shift.row = shift.row;
+                self.view_shift.col = shift.col;
+            }
+            AppAction::CursorViewChange { cursor, view_shift } => {
+                self.cursor.row = cursor.row;
+                self.cursor.col = cursor.col;
+                self.view_shift.row = view_shift.row;
+                self.view_shift.col = view_shift.col;
             }
             AppAction::EnterMode(mode) => {
                 match mode {
@@ -170,7 +207,17 @@ impl App {
         };
     }
 
-    // LYN: Rendering Logic
+    fn process_cmd(&mut self) {
+        match self.cmd.as_str() {
+            "q" | "quit" | "exit" => self.running = false,
+            "h" | "help" => self.show_help = true,
+            _ => {}
+        }
+    }
+
+    fn frame_cursor(&mut self) {
+        // TODO: impl or remove
+    }
 
     fn draw(&self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), AppError> {
         term.draw(|frame| {
@@ -182,7 +229,7 @@ impl App {
             }
 
             let [main_area, status_area] = vertical![*=1, ==1].areas(area);
-            frame.render_widget(&self.doc, main_area);
+            frame.render_widget(self, main_area);
 
             let status_line = match self.mode {
                 AppMode::Normal => "NORMAL".to_string(),
@@ -209,7 +256,9 @@ impl App {
             line!["`:h` - to display this help message"],
         ];
 
-        Paragraph::new(text).alignment(Alignment::Center)
+        Paragraph::new(text)
+            .block(Block::default().borders(Borders::ALL))
+            .alignment(Alignment::Center)
     }
 
     // LYN: Handling Event
@@ -233,20 +282,41 @@ impl App {
     ) -> Result<AppAction, AppError> {
         let width = term.size()?.width - 1;
         let height = term.size()?.height - 2;
+        let cursor = self.cursor;
+        let view_shift = self.view_shift;
+
         match event {
             Event::Key(key) => match key.code {
-                KeyCode::Char('h') | KeyCode::Left => Ok(AppAction::CursorMove(
-                    self.cursor.constraint_move(width, height, Move::Left),
-                )),
-                KeyCode::Char('j') | KeyCode::Down => Ok(AppAction::CursorMove(
-                    self.cursor.constraint_move(width, height, Move::Down),
-                )),
-                KeyCode::Char('k') | KeyCode::Up => Ok(AppAction::CursorMove(
-                    self.cursor.constraint_move(width, height, Move::Up),
-                )),
-                KeyCode::Char('l') | KeyCode::Right => Ok(AppAction::CursorMove(
-                    self.cursor.constraint_move(width, height, Move::Right),
-                )),
+                KeyCode::Char('h') | KeyCode::Left => {
+                    Ok(if key.modifiers == KeyModifiers::CONTROL {
+                        AppAction::ViewShift(view_shift.free_move(Move::Left))
+                    } else {
+                        AppAction::CursorMove(cursor.constraint_move(width, height, Move::Left))
+                    })
+                }
+
+                KeyCode::Char('j') | KeyCode::Down => {
+                    Ok(if key.modifiers == KeyModifiers::CONTROL {
+                        AppAction::ViewShift(view_shift.free_move(Move::Down))
+                    } else {
+                        AppAction::CursorMove(cursor.constraint_move(width, height, Move::Down))
+                    })
+                }
+
+                KeyCode::Char('k') | KeyCode::Up => Ok(if key.modifiers == KeyModifiers::CONTROL {
+                    AppAction::ViewShift(view_shift.free_move(Move::Up))
+                } else {
+                    AppAction::CursorMove(cursor.constraint_move(width, height, Move::Up))
+                }),
+
+                KeyCode::Char('l') | KeyCode::Right => {
+                    Ok(if key.modifiers == KeyModifiers::CONTROL {
+                        AppAction::ViewShift(view_shift.free_move(Move::Right))
+                    } else {
+                        AppAction::CursorMove(cursor.constraint_move(width, height, Move::Right))
+                    })
+                }
+
                 KeyCode::Char('i') => Ok(AppAction::EnterMode(AppMode::Insert)),
                 KeyCode::Char(':') => Ok(AppAction::EnterMode(AppMode::Command)),
                 _ => Ok(AppAction::None),
@@ -277,14 +347,6 @@ impl App {
             _ => Ok(AppAction::None),
         }
     }
-
-    fn process_cmd(&mut self) {
-        match self.cmd.as_str() {
-            "q" | "quit" | "exit" => self.running = false,
-            "h" | "help" => self.show_help = true,
-            _ => {}
-        }
-    }
 }
 
 impl Default for App {
@@ -292,10 +354,30 @@ impl Default for App {
         Self {
             mode: AppMode::default(),
             cursor: Potision::default(),
+            view_shift: Potision::default(),
             show_help: true,
             running: true,
             doc: Document::default(),
             cmd: String::default(),
+        }
+    }
+}
+
+impl Widget for &App {
+    fn render(self, area: Rect, buf: &mut Buffer)
+    where
+        Self: Sized,
+    {
+        for row in 0..area.height {
+            if let Some(ln) = self.doc.get_line((self.view_shift.row + row) as usize) {
+                if let Some(ln) = ln.get(self.view_shift.col as usize..) {
+                    buf.set_string(0, row, ln, Style::default());
+                } else {
+                    buf.set_string(0, row, "<", Style::default().dark_gray())
+                }
+            } else {
+                buf.set_string(0, row, "~", Style::default().dark_gray())
+            }
         }
     }
 }
