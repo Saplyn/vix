@@ -41,16 +41,19 @@ impl Document {
         Ok(Self { rows })
     }
 
+    #[inline]
     pub fn get_line(&self, ind: usize) -> Option<&str> {
         self.rows.get(ind).map(|ln| ln.content.as_str())
     }
 
+    #[inline]
     pub fn get_styled_line(&self, ind: usize) -> Option<(&str, Style)> {
         self.rows
             .get(ind)
             .map(|ln| (ln.content.as_str(), Style::default())) // TODO: Actual styling
     }
 
+    #[inline]
     pub fn line_count(&self) -> usize {
         self.rows.len()
     }
