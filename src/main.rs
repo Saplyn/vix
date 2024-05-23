@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{env, error::Error};
 
 use app::App;
 
@@ -8,7 +8,14 @@ mod piece_table;
 mod tui;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let mut app = App::new();
+    let args: Vec<_> = env::args().collect();
+
+    let mut app = match args.len() {
+        1 => App::default(),
+        2 => App::open_file(&args[1])?,
+        _ => todo!("not supported"),
+    };
+
     app.run()?;
     Ok(())
 }

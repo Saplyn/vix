@@ -1,4 +1,10 @@
-use std::{fs::File, io::Stdout, time::Duration, u16};
+use std::{
+    fs::File,
+    io::{self, Stdout},
+    path::Path,
+    time::Duration,
+    u16,
+};
 
 use crossterm::event::{self, Event, KeyCode};
 use derive_tools::Display;
@@ -8,7 +14,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Style, Stylize},
     text::Line,
-    widgets::{Block, Clear, Paragraph, Widget},
+    widgets::{Clear, Paragraph, Widget},
     Terminal,
 };
 use ratatui_macros::{line, vertical};
@@ -17,7 +23,7 @@ use thiserror::Error;
 
 use crate::{document::Document, tui};
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct App {
     mode: AppMode,
     cursor: Potision,
@@ -99,15 +105,15 @@ impl Potision {
 }
 
 impl App {
-    pub fn new() -> Self {
-        Self {
-            mode: AppMode::Normal,
+    pub fn open_file(file_path: impl AsRef<Path>) -> io::Result<Self> {
+        Ok(Self {
+            mode: AppMode::default(),
             cursor: Potision::default(),
             show_help: true,
             running: true,
-            doc: Document::hello_world(),
-            cmd: String::new(),
-        }
+            doc: Document::open(file_path)?,
+            cmd: String::default(),
+        })
     }
 
     pub fn run(&mut self) -> Result<(), AppError> {
@@ -262,14 +268,27 @@ impl App {
 
     fn help_widgt(&self) -> impl Widget {
         let text = vec![
-            line!["ViX - A Vi-like Text Editor"].centered(),
+            line!["ViX - A Vi-like Text Editor"],
             line![],
             line![],
-            line!["`:q` - to quit vix                 "].centered(),
-            line!["`:h` - to display this help message"].centered(),
+            line!["`:q` - to quit vix                 "],
+            line!["`:h` - to display this help message"],
         ];
 
         Paragraph::new(text).alignment(Alignment::Center)
+    }
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self {
+            mode: AppMode::default(),
+            cursor: Potision::default(),
+            show_help: true,
+            running: true,
+            doc: Document::default(),
+            cmd: String::default(),
+        }
     }
 }
 

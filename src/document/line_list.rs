@@ -1,3 +1,5 @@
+use std::{fs, io, path::Path};
+
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -31,6 +33,12 @@ impl Document {
             DocLine::from_str("Hello World!"),
         ];
         Self { rows }
+    }
+
+    pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
+        let content = fs::read_to_string(path)?;
+        let rows = content.lines().map(|ln| DocLine::from_str(ln)).collect();
+        Ok(Self { rows })
     }
 
     pub fn get_line(&self, ind: usize) -> Option<&str> {
