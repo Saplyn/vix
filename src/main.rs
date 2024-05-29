@@ -4,7 +4,6 @@ use app::App;
 
 mod app;
 mod document;
-mod piece_table;
 mod tui;
 
 fn main() -> Result<(), Box<dyn Error>> {
