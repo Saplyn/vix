@@ -4,7 +4,8 @@ use std::{
 };
 
 use crossterm::{
-    cursor, execute,
+    cursor::{self, SetCursorStyle},
+    execute,
     terminal::{self, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
@@ -29,6 +30,7 @@ pub fn restore() -> io::Result<()> {
     execute!(stdout(), cursor::DisableBlinking)?;
     execute!(stdout(), cursor::RestorePosition)?;
     execute!(stdout(), terminal::LeaveAlternateScreen)?;
+    execute!(stdout(), SetCursorStyle::BlinkingBlock)?;
     disable_raw_mode()?;
     Ok(())
 }

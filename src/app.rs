@@ -1,18 +1,19 @@
 use std::{
     cmp,
     fs::File,
-    io::{self, Stdout},
+    io::{self, stdout, Stdout},
     path::Path,
     time::Duration,
     u16,
 };
 
 use crossterm::{
-    cursor,
+    cursor::SetCursorStyle,
     event::{self, Event, KeyCode},
+    execute,
 };
 use derive_tools::Display;
-use log::{debug, info, warn, LevelFilter};
+use log::{debug, warn, LevelFilter};
 use ratatui::{
     backend::CrosstermBackend,
     buffer::Buffer,
@@ -31,8 +32,8 @@ use crate::{document::Document, tui};
 #[derive(Debug)]
 pub struct App {
     mode: AppMode,
-    cursor: Potision,
-    view_shift: Potision,
+    cursor: Position,
+    view_shift: Position,
     show_help: bool,
     running: bool,
     doc: Document,
@@ -58,22 +59,24 @@ enum AppMode {
 #[derive(Debug, PartialEq, Eq)]
 enum AppAction {
     None,
-    CursorMove(Potision),
-    ViewShift(Potision),
     CursorViewChange {
-        cursor: Potision,
-        view_shift: Potision,
+        cursor: Position,
+        view_shift: Position,
     },
     EnterMode(AppMode),
     CmdPush(char),
     CmdPop,
     CmdEnter,
+    InsertChar(char),
+    DeleteChar,
+    BackspaceLine,
+    NewLine,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Potision {
-    row: u16,
-    col: u16,
+pub struct Position {
+    pub row: u16,
+    pub col: u16,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -85,42 +88,42 @@ pub enum Move {
     Down,
 }
 
-impl Potision {
-    pub fn free_move(self, mv: Move) -> Potision {
+impl Position {
+    pub fn free_move(self, mv: Move) -> Position {
         match mv {
-            Move::Left => Potision {
+            Move::Left => Position {
                 row: self.row,
                 col: self.col.saturating_sub(1),
             },
-            Move::Up => Potision {
+            Move::Up => Position {
                 row: self.row.saturating_sub(1),
                 col: self.col,
             },
-            Move::Down => Potision {
+            Move::Down => Position {
                 row: self.row.saturating_add(1),
                 col: self.col,
             },
-            Move::Right => Potision {
+            Move::Right => Position {
                 row: self.row,
                 col: self.col.saturating_add(1),
             },
-            Move::None => Potision {
+            Move::None => Position {
                 row: self.row,
                 col: self.col,
             },
         }
     }
-    pub fn constraint_move(self, width: u16, height: u16, mv: Move) -> Potision {
+    pub fn constraint_move(self, width: u16, height: u16, mv: Move) -> Position {
         match mv {
-            Move::Left => Potision {
+            Move::Left => Position {
                 row: self.row,
                 col: self.col.saturating_sub(1),
             },
-            Move::Up => Potision {
+            Move::Up => Position {
                 row: self.row.saturating_sub(1),
                 col: self.col,
             },
-            Move::Down => Potision {
+            Move::Down => Position {
                 row: if self.row < height {
                     self.row.saturating_add(1)
                 } else {
@@ -128,7 +131,7 @@ impl Potision {
                 },
                 col: self.col,
             },
-            Move::Right => Potision {
+            Move::Right => Position {
                 row: self.row,
                 col: if self.col < width {
                     self.col.saturating_add(1)
@@ -136,7 +139,7 @@ impl Potision {
                     self.col
                 },
             },
-            Move::None => Potision {
+            Move::None => Position {
                 row: self.row,
                 col: self.col,
             },
@@ -145,13 +148,13 @@ impl Potision {
 }
 
 impl App {
-    // LYN: Core Functionality
+    //~ Core Functionality
 
     pub fn open_file(file_path: impl AsRef<Path>) -> io::Result<Self> {
         Ok(Self {
             mode: AppMode::default(),
-            cursor: Potision::default(),
-            view_shift: Potision::default(),
+            cursor: Position::default(),
+            view_shift: Position::default(),
             show_help: true,
             running: true,
             doc: Document::open(file_path)?,
@@ -167,6 +170,11 @@ impl App {
             self.draw(&mut term)?;
             term.show_cursor()?;
             term.set_cursor(self.cursor.col, self.cursor.row)?;
+            match self.mode {
+                AppMode::Normal => execute!(stdout(), SetCursorStyle::BlinkingBlock)?,
+                AppMode::Insert => execute!(stdout(), SetCursorStyle::BlinkingBar)?,
+                AppMode::Command => execute!(stdout(), SetCursorStyle::SteadyUnderScore)?,
+            }
 
             if event::poll(Duration::from_millis(10))? {
                 self.show_help = false;
@@ -183,19 +191,11 @@ impl App {
         Ok(())
     }
 
-    // LYN: Processing Logic
+    //~ Processing Logic
 
     fn process(&mut self, action: AppAction) {
         match action {
             AppAction::None => {}
-            AppAction::CursorMove(pos) => {
-                self.cursor.row = pos.row;
-                self.cursor.col = pos.col;
-            }
-            AppAction::ViewShift(shift) => {
-                self.view_shift.row = shift.row;
-                self.view_shift.col = shift.col;
-            }
             AppAction::CursorViewChange { cursor, view_shift } => {
                 self.cursor.row = cursor.row;
                 self.cursor.col = cursor.col;
@@ -203,9 +203,8 @@ impl App {
                 self.view_shift.col = view_shift.col;
             }
             AppAction::EnterMode(mode) => {
-                match mode {
-                    AppMode::Command => self.cmd.clear(),
-                    _ => {}
+                if let AppMode::Command = mode {
+                    self.cmd.clear()
                 }
                 self.mode = mode;
             }
@@ -216,6 +215,32 @@ impl App {
             AppAction::CmdEnter => {
                 self.process_cmd();
                 self.mode = AppMode::Normal;
+            }
+            AppAction::InsertChar(ch) => {
+                self.doc.insert(self.cursor, ch);
+                self.cursor.col = self.cursor.col.saturating_add(1);
+            }
+            AppAction::DeleteChar => {
+                self.doc.delete(self.cursor.free_move(Move::Left));
+                self.cursor.col = self.cursor.col.saturating_sub(1);
+            }
+            AppAction::BackspaceLine => {
+                let col = self
+                    .doc
+                    .get_line_len(self.cursor.row.saturating_sub(1) as usize)
+                    .saturating_sub(self.view_shift.col as usize) as u16;
+                self.doc.merge_line_into_up(self.cursor.row as usize);
+                self.cursor.col = col;
+                if self.cursor.row != 0 {
+                    self.cursor.row = self.cursor.row.saturating_sub(1);
+                } else {
+                    self.view_shift.row = self.view_shift.row.saturating_sub(1);
+                }
+            }
+            AppAction::NewLine => {
+                self.doc.split_to_two_line(self.cursor);
+                self.cursor.col = 0;
+                self.cursor.row = self.cursor.row.saturating_add(1);
             }
         };
     }
@@ -228,7 +253,7 @@ impl App {
         }
     }
 
-    // LYN: Rendering Logic
+    //~ Rendering Logic
 
     fn draw(&self, term: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<(), AppError> {
         term.draw(|frame| {
@@ -252,14 +277,14 @@ impl App {
             if self.show_help {
                 let popup_layout = centered_rect(frame.size(), 35, 53);
                 frame.render_widget(Clear, popup_layout);
-                frame.render_widget(self.help_widgt(), popup_layout);
+                frame.render_widget(self.help_widget(), popup_layout);
             }
         })?;
 
         Ok(())
     }
 
-    fn help_widgt(&self) -> impl Widget {
+    fn help_widget(&self) -> impl Widget {
         let text = vec![
             line!["ViX - A Vi-like Text Editor"],
             line![],
@@ -273,7 +298,7 @@ impl App {
             .alignment(Alignment::Center)
     }
 
-    // LYN: Handling Event
+    //~ Handling Event
 
     fn handle_event(
         &self,
@@ -399,6 +424,17 @@ impl App {
         match event {
             Event::Key(key) => match key.code {
                 KeyCode::Esc => Ok(AppAction::EnterMode(AppMode::Normal)),
+                KeyCode::Char(ch) => Ok(AppAction::InsertChar(ch)),
+                KeyCode::Backspace => {
+                    if self.cursor.col != 0 {
+                        Ok(AppAction::DeleteChar)
+                    } else if self.cursor.row != 0 || self.view_shift.row != 0 {
+                        Ok(AppAction::BackspaceLine)
+                    } else {
+                        Ok(AppAction::None)
+                    }
+                }
+                KeyCode::Enter => Ok(AppAction::NewLine),
                 _ => Ok(AppAction::None),
             },
             _ => Ok(AppAction::None),
@@ -423,8 +459,8 @@ impl Default for App {
     fn default() -> Self {
         Self {
             mode: AppMode::default(),
-            cursor: Potision::default(),
-            view_shift: Potision::default(),
+            cursor: Position::default(),
+            view_shift: Position::default(),
             show_help: true,
             running: true,
             doc: Document::default(),
