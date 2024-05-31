@@ -12,7 +12,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut app = match args.len() {
         1 => App::default(),
         2 => App::open_file(&args[1])?,
-        _ => todo!("not supported"),
+        _ => panic!("not supported"),
     };
 
     app.run()?;
