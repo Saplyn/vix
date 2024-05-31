@@ -339,10 +339,10 @@ impl App {
             line!["ViX - A Vi-like Text Editor"],
             line![],
             line![],
-            line!["`:q!` - to quit vix forcefully      "],
-            line!["`:h`  - to display this help message"],
-            line!["`:w`  - to save a file              "],
-            line!["`:f`  - to provide a uri            "],
+            line!["`:q!`     - to quit vix forcefully      "],
+            line!["`:h`      - to display this help message"],
+            line!["`:w`      - to save a file              "],
+            line!["`:w file` - to save a file to `file`    "],
         ];
 
         Paragraph::new(text)
