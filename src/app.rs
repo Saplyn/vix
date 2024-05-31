@@ -27,7 +27,10 @@ use ratatui_macros::{line, vertical};
 use simplelog::{CombinedLogger, WriteLogger};
 use thiserror::Error;
 
-use crate::{document::Document, tui};
+use crate::{
+    document::{Document, DocumentError},
+    tui,
+};
 
 #[derive(Debug)]
 pub struct App {
@@ -38,6 +41,7 @@ pub struct App {
     running: bool,
     doc: Document,
     cmd: String,
+    msg: String,
 }
 
 #[derive(Debug, Error)]
@@ -113,6 +117,7 @@ impl Position {
             },
         }
     }
+    #[allow(unused)]
     pub fn constraint_move(self, width: u16, height: u16, mv: Move) -> Position {
         match mv {
             Move::Left => Position {
@@ -159,6 +164,7 @@ impl App {
             running: true,
             doc: Document::open(file_path)?,
             cmd: String::default(),
+            msg: String::default(),
         })
     }
 
@@ -194,6 +200,7 @@ impl App {
     //~ Processing Logic
 
     fn process(&mut self, action: AppAction) {
+        self.msg.clear();
         match action {
             AppAction::None => {}
             AppAction::CursorViewChange { cursor, view_shift } => {
@@ -246,9 +253,40 @@ impl App {
     }
 
     fn process_cmd(&mut self) {
-        match self.cmd.as_str() {
-            "q" | "quit" | "exit" => self.running = false,
+        let cmd: Vec<&str> = self.cmd.split(' ').collect();
+        if cmd.is_empty() {
+            return;
+        }
+        match cmd[0] {
+            "q" | "quit" | "exit" => {
+                if !self.doc.dirty() {
+                    self.running = false;
+                } else {
+                    self.msg =
+                        "Unsaved changes, use `q!` to force a quit without saving".to_string();
+                }
+            }
+            "q!" | "quit!" => self.running = false,
             "h" | "help" => self.show_help = true,
+            "w" | "write" => {
+                if cmd.len() > 1 {
+                    self.doc.set_uri(cmd[1]);
+                }
+                if let Err(DocumentError::NoUri) = self.doc.save() {
+                    self.msg =
+                        "No URI is specified, use `:w path/file.txt` to save to `path/file.txt`"
+                            .to_string();
+                }
+            }
+            "wq" => {
+                if let Err(DocumentError::NoUri) = self.doc.save() {
+                    self.msg =
+                        "No URI is specified, use `:w path/file.txt` to save to `path/file.txt`"
+                            .to_string();
+                    return;
+                }
+                self.running = false;
+            }
             _ => {}
         }
     }
@@ -263,12 +301,24 @@ impl App {
             frame.render_widget(self, main_area);
 
             let status_line = match self.mode {
-                AppMode::Normal => "NORMAL".to_string(),
+                AppMode::Normal => {
+                    if self.msg.is_empty() {
+                        "NORMAL".to_string()
+                    } else {
+                        self.msg.clone()
+                    }
+                }
                 AppMode::Command => format!("COMMAND: {}", self.cmd),
                 AppMode::Insert => "INSERT".to_string(),
             };
             let status_style = match self.mode {
-                AppMode::Normal => Style::default().bold().on_light_blue(),
+                AppMode::Normal => {
+                    if self.msg.is_empty() {
+                        Style::default().bold().on_light_blue()
+                    } else {
+                        Style::default().bold().on_red()
+                    }
+                }
                 AppMode::Command => Style::default().bold().black().on_light_yellow(),
                 AppMode::Insert => Style::default().bold().black().on_green(),
             };
@@ -289,8 +339,10 @@ impl App {
             line!["ViX - A Vi-like Text Editor"],
             line![],
             line![],
-            line!["`:q` - to quit vix                 "],
-            line!["`:h` - to display this help message"],
+            line!["`:q!` - to quit vix forcefully      "],
+            line!["`:h`  - to display this help message"],
+            line!["`:w`  - to save a file              "],
+            line!["`:f`  - to provide a uri            "],
         ];
 
         Paragraph::new(text)
@@ -465,6 +517,7 @@ impl Default for App {
             running: true,
             doc: Document::default(),
             cmd: String::default(),
+            msg: String::default(),
         }
     }
 }
