@@ -4,12 +4,11 @@ use std::{
     io::{self, stdout, Stdout},
     path::Path,
     time::Duration,
-    u16,
 };
 
 use crossterm::{
     cursor::SetCursorStyle,
-    event::{self, Event, KeyCode},
+    event::{self, Event, KeyCode, KeyEventKind},
     execute,
 };
 use derive_tools::Display;
@@ -183,11 +182,13 @@ impl App {
             }
 
             if event::poll(Duration::from_millis(10))? {
-                self.show_help = false;
-
                 let event = event::read()?;
                 debug!("{:?}", event);
                 let action = self.handle_event(event, &term)?;
+                if action != AppAction::None {
+                    self.show_help = false;
+                    self.msg.clear();
+                }
                 debug!("{:?}", action);
                 self.process(action);
             }
@@ -200,7 +201,6 @@ impl App {
     //~ Processing Logic
 
     fn process(&mut self, action: AppAction) {
-        self.msg.clear();
         match action {
             AppAction::None => {}
             AppAction::CursorViewChange { cursor, view_shift } => {
@@ -373,7 +373,7 @@ impl App {
         term: &Terminal<CrosstermBackend<Stdout>>,
     ) -> Result<AppAction, AppError> {
         match event {
-            Event::Key(key) => match key.code {
+            Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
                 KeyCode::Char('h') | KeyCode::Left => self.handle_event_cursor(term, Move::Left),
                 KeyCode::Char('j') | KeyCode::Down => self.handle_event_cursor(term, Move::Down),
                 KeyCode::Char('k') | KeyCode::Up => self.handle_event_cursor(term, Move::Up),
@@ -474,7 +474,7 @@ impl App {
 
     fn handle_event_insert(&self, event: Event) -> Result<AppAction, AppError> {
         match event {
-            Event::Key(key) => match key.code {
+            Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
                 KeyCode::Esc => Ok(AppAction::EnterMode(AppMode::Normal)),
                 KeyCode::Char(ch) => Ok(AppAction::InsertChar(ch)),
                 KeyCode::Backspace => {
@@ -495,7 +495,7 @@ impl App {
 
     fn handle_event_command(&self, event: Event) -> Result<AppAction, AppError> {
         match event {
-            Event::Key(key) => match key.code {
+            Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
                 KeyCode::Esc => Ok(AppAction::EnterMode(AppMode::Normal)),
                 KeyCode::Char(ch) => Ok(AppAction::CmdPush(ch)),
                 KeyCode::Backspace => Ok(AppAction::CmdPop),

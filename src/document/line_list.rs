@@ -2,7 +2,6 @@ use std::{
     fs::{self, File},
     io::{self, BufWriter, Write},
     path::{Path, PathBuf},
-    usize,
 };
 
 use thiserror::Error;
